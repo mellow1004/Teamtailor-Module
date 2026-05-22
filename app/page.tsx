@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CandidateCard,
   type ActionStatus,
@@ -12,6 +12,41 @@ import { parseLimit } from "@/lib/parseLimit";
 type Job = { id: string; title: string; status: string };
 
 type BulkAction = "" | "cv" | "approve" | "reject";
+
+const STORAGE_PREFIX = "tt-ai-results:";
+
+function loadResults(jobId: string): CandidateResult[] {
+  if (!jobId || typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(`${STORAGE_PREFIX}${jobId}`);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveResults(jobId: string, results: CandidateResult[]) {
+  if (!jobId || typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      `${STORAGE_PREFIX}${jobId}`,
+      JSON.stringify(results)
+    );
+  } catch {
+    // quota exceeded or storage disabled — silently ignore
+  }
+}
+
+function removeResults(jobId: string) {
+  if (!jobId || typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(`${STORAGE_PREFIX}${jobId}`);
+  } catch {
+    // ignore
+  }
+}
 
 export default function Home() {
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -79,7 +114,11 @@ export default function Home() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Analys misslyckades");
 
-      setResults(data.results || []);
+      const sortedResults = [...(data.results || [])].sort(
+        (a: CandidateResult, b: CandidateResult) => b.score - a.score
+      );
+      setResults(sortedResults);
+      saveResults(jobId, sortedResults);
     } catch (err: any) {
       setError(err?.message || "Något gick fel");
     } finally {
@@ -88,18 +127,30 @@ export default function Home() {
     }
   }
 
-  const sorted = useMemo(
-    () => [...results].sort((a, b) => b.score - a.score),
-    [results]
-  );
+  const allSelected = results.length > 0 && results.every((c) => selected.has(c.applicationId));
 
-  const allSelected = sorted.length > 0 && sorted.every((c) => selected.has(c.applicationId));
+  function handleJobChange(newJobId: string) {
+    setJobId(newJobId);
+    setSelected(new Set());
+    setActionByApp({});
+    setCvByApp({});
+    setError("");
+    setResults(newJobId ? loadResults(newJobId) : []);
+  }
+
+  function clearResults() {
+    setResults([]);
+    setSelected(new Set());
+    setActionByApp({});
+    setCvByApp({});
+    if (jobId) removeResults(jobId);
+  }
 
   function toggleSelectAll() {
     if (allSelected) {
       setSelected(new Set());
     } else {
-      setSelected(new Set(sorted.map((c) => c.applicationId)));
+      setSelected(new Set(results.map((c) => c.applicationId)));
     }
   }
 
@@ -206,7 +257,7 @@ export default function Home() {
   async function runBulk() {
     if (!bulkAction || selected.size === 0 || bulkBusy) return;
     setBulkBusy(true);
-    const targets = sorted.filter((c) => selected.has(c.applicationId));
+    const targets = results.filter((c) => selected.has(c.applicationId));
     try {
       if (bulkAction === "cv") {
         await Promise.all(targets.map((c) => analyzeCvFor(c)));
@@ -238,7 +289,7 @@ export default function Home() {
             </label>
             <select
               value={jobId}
-              onChange={(e) => setJobId(e.target.value)}
+              onChange={(e) => handleJobChange(e.target.value)}
               className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
               disabled={loading}
             >
@@ -288,12 +339,20 @@ export default function Home() {
         </div>
       )}
 
-      {!loading && sorted.length > 0 && (
+      {!loading && results.length > 0 && (
         <section>
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-            <h2 className="text-xl font-semibold text-gray-900">
-              Resultat ({sorted.length})
-            </h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-xl font-semibold text-gray-900">
+                Resultat ({results.length})
+              </h2>
+              <button
+                onClick={clearResults}
+                className="text-sm text-gray-600 hover:text-gray-900 underline-offset-2 hover:underline transition"
+              >
+                Rensa resultat
+              </button>
+            </div>
 
             <div className="flex items-center gap-3">
               <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
@@ -330,7 +389,7 @@ export default function Home() {
           </div>
 
           <div className="grid sm:grid-cols-2 gap-4">
-            {sorted.map((c) => (
+            {results.map((c) => (
               <CandidateCard
                 key={c.applicationId}
                 candidate={c}

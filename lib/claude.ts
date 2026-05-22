@@ -11,15 +11,38 @@ export type Decision = {
 
 const MODEL = "claude-sonnet-4-5";
 
-const SYSTEM_PROMPT =
-  "Du är en expert rekryteringsassistent. Analysera kandidatprofiler mot given instruktion. Returnera alltid JSON. Svara på svenska.";
+const SYSTEM_PROMPT = `Du är en expert rekryteringsassistent som bedömer kandidater mot rekryterarens kriterier.
 
-function buildPrompt(candidate: Candidate, instruction: string): string {
+VIKTIGT om instruktionen:
+- Instruktionen beskriver KRITERIER att bedöma varje kandidat mot, inte hur många kandidater du ska analysera. Du bedömer alltid en kandidat åt gången.
+- Om instruktionen anger ett antal (t.ex. "hitta 3 kandidater med X", "de fem bästa", "topp 10") är detta ett MÅLANTAL för hur många som bör godkännas — inte ett tak för hur många du analyserar. Bedöm varje kandidat på dess egna meriter mot kriterierna.
+- Om en kandidat tydligt uppfyller kriterierna ska decision vara "approve". Om kandidaten tydligt inte uppfyller dem ska decision vara "reject". Använd "maybe" sparsamt, bara när bedömningen verkligen är osäker.
+- Om färre kandidater uppfyller kraven än målantalet ska du INTE sänka ribban för att fylla kvoten. Det är bättre att godkänna få och starka än många svaga.
+
+VIKTIGT om reason-fältet:
+- För "reject": ange exakt vilket krav i instruktionen kandidaten inte uppfyller (t.ex. "Saknar erfarenhet av React" eller "Bor i Göteborg, instruktionen kräver Stockholm").
+- För "approve": ange kort vilka av instruktionens krav kandidaten uppfyller.
+- För "maybe": förklara vilken information som saknas för en säker bedömning.
+
+Returnera alltid JSON. Svara på svenska. Max 2 meningar i reason-fältet.`;
+
+function buildPrompt(
+  candidate: Candidate,
+  instruction: string,
+  jobDescription: string
+): string {
   const screening = candidate.screeningAnswers
     .map((s) => `Q: ${s.question}\nA: ${s.answer}`)
     .join("\n\n") || "Inga screeningsvar";
 
-  return `Instruktion från rekryterare:
+  const jobSection = jobDescription
+    ? `Jobbet (från Teamtailor):
+${jobDescription}
+
+`
+    : "";
+
+  return `${jobSection}Instruktion från rekryterare:
 ${instruction}
 
 Kandidat:
@@ -98,7 +121,8 @@ export async function analyzeCv(cvText: string): Promise<CvAnalysis> {
 
 export async function processCandidates(
   candidates: Candidate[],
-  instruction: string
+  instruction: string,
+  jobDescription: string = ""
 ): Promise<Decision[]> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY saknas i .env.local");
@@ -112,7 +136,7 @@ export async function processCandidates(
           model: MODEL,
           max_tokens: 500,
           system: SYSTEM_PROMPT,
-          messages: [{ role: "user", content: buildPrompt(cand, instruction) }],
+          messages: [{ role: "user", content: buildPrompt(cand, instruction, jobDescription) }],
         });
 
         const textBlock = message.content.find((b) => b.type === "text");
