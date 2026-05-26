@@ -78,10 +78,6 @@ export async function getStagesForJob(jobId: string): Promise<Stage[]> {
 }
 
 export async function getCandidatesForJob(jobId: string): Promise<Candidate[]> {
-  const stages = await getStagesForJob(jobId);
-  const inbox = stages.find((s) => s.name.trim().toLowerCase() === "inbox");
-  if (!inbox) return [];
-
   const PAGE_SIZE = 30;
   const MAX_PAGES = 50;
   const applications: any[] = [];
@@ -89,7 +85,7 @@ export async function getCandidatesForJob(jobId: string): Promise<Candidate[]> {
 
   for (let page = 1; page <= MAX_PAGES; page++) {
     const data = await ttFetch(
-      `/job-applications?filter%5Bjob%5D=${encodeURIComponent(jobId)}&filter%5Bstage%5D=${encodeURIComponent(inbox.id)}&include=candidate,stage&page%5Bsize%5D=${PAGE_SIZE}&page%5Bnumber%5D=${page}`
+      `/job-applications?filter%5Bjob%5D=${encodeURIComponent(jobId)}&include=candidate,stage&page%5Bsize%5D=${PAGE_SIZE}&page%5Bnumber%5D=${page}`
     );
     const pageApps: any[] = Array.isArray(data?.data) ? data.data : [];
     const pageIncluded: any[] = Array.isArray(data?.included) ? data.included : [];
@@ -116,6 +112,13 @@ export async function getCandidatesForJob(jobId: string): Promise<Candidate[]> {
     if (!cand) continue;
 
     const stage = stageRef ? findIncluded("stages", stageRef.id) : null;
+    const stageName = String(stage?.attributes?.name || "").trim();
+    const rejected = app.attributes?.rejected === true || !!app.attributes?.["rejected-at"];
+    const disqualified =
+      app.attributes?.disqualified === true || !!app.attributes?.["disqualified-at"];
+
+    if (stageName.toLowerCase() !== "inbox") continue;
+    if (rejected || disqualified) continue;
 
     let screeningAnswers: Array<{ question: string; answer: string }> = [];
     try {
