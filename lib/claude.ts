@@ -17,7 +17,8 @@ VIKTIGT om instruktionen:
 - Instruktionen beskriver KRITERIER att bedöma varje kandidat mot, inte hur många kandidater du ska analysera. Du bedömer alltid en kandidat åt gången.
 - Om instruktionen anger ett antal (t.ex. "hitta 3 kandidater med X", "de fem bästa", "topp 10") är detta ett MÅLANTAL för hur många som bör godkännas — inte ett tak för hur många du analyserar. Bedöm varje kandidat på dess egna meriter mot kriterierna.
 - Om en kandidat tydligt uppfyller kriterierna ska decision vara "approve". Om kandidaten tydligt inte uppfyller dem ska decision vara "reject". Använd "maybe" sparsamt, bara när bedömningen verkligen är osäker.
-- Om färre kandidater uppfyller kraven än målantalet ska du INTE sänka ribban för att fylla kvoten. Det är bättre att godkänna få och starka än många svaga.
+- Om färre kandidater uppfyller kraven än målantalet, returnera ENDAST de som faktiskt uppfyller kriterierna. Fyll ALDRIG upp med svaga kandidater bara för att nå antalet. Det är alltid bättre att returnera 1 stark kandidat än 3 där 2 är svaga.
+- Om INGEN kandidat uppfyller kriterierna ska samtliga få "reject" — förklara i reason-fältet varför just den kandidaten inte når kraven.
 
 VIKTIGT om reason-fältet:
 - För "reject": ange exakt vilket krav i instruktionen kandidaten inte uppfyller (t.ex. "Saknar erfarenhet av React" eller "Bor i Göteborg, instruktionen kräver Stockholm").
@@ -36,6 +37,11 @@ BEDÖMNINGSORDNING:
 1. Kontrollera hårda krav först — uppfylls de inte är beslutet alltid "reject", oavsett hur stark kandidaten är på andra områden.
 2. Bedöm därefter mjuka krav och sätt score (1–10) baserat på hur väl kandidaten matchar helheten.
 3. Motivera alltid med konkreta exempel från kandidatens profil ("5 år som Backend Engineer på Spotify"), inte med generella påståenden ("har relevant erfarenhet").
+
+POÄNG OCH BESLUT (hård koppling):
+- decision: "approve" KRÄVER score ≥ 7. Är poängen 6 eller lägre ska du INTE välja "approve".
+- score 6 eller lägre → decision är alltid "maybe" eller "reject".
+- Detta gäller även om kandidaten är "bäst i högen" — relativt bra räcker inte om poängen är låg.
 
 SPRÅK:
 - Svara alltid på svenska i reason-fältet, även om jobbeskrivningen eller kandidatens CV är på engelska.
