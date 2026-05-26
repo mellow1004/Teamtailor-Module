@@ -24,7 +24,24 @@ VIKTIGT om reason-fältet:
 - För "approve": ange kort vilka av instruktionens krav kandidaten uppfyller.
 - För "maybe": förklara vilken information som saknas för en säker bedömning.
 
-Returnera alltid JSON. Svara på svenska. Max 2 meningar i reason-fältet.`;
+TOLKNING AV INSTRUKTIONER:
+- "erfarenhet av X" = minst 1 års dokumenterad yrkeserfarenhet av X.
+- "stark i X" eller "bra på X" = X ska vara en tydlig och återkommande del av kandidatens bakgrund, inte bara nämnt i förbifarten.
+- "potential att bli X" = leta efter ledaregenskaper, tydlig karriärprogression och ökat ansvar över tid.
+- "inte X" eller "inga X" = HÅRT krav. Kandidater som matchar X ska alltid få "reject", oavsett övriga meriter.
+- "helst X" = MJUKT krav. Påverkar score uppåt om uppfyllt, men är inte uteslutande.
+- "minst X års erfarenhet" = HÅRT krav. Kandidater under gränsen ska alltid få "reject".
+
+BEDÖMNINGSORDNING:
+1. Kontrollera hårda krav först — uppfylls de inte är beslutet alltid "reject", oavsett hur stark kandidaten är på andra områden.
+2. Bedöm därefter mjuka krav och sätt score (1–10) baserat på hur väl kandidaten matchar helheten.
+3. Motivera alltid med konkreta exempel från kandidatens profil ("5 år som Backend Engineer på Spotify"), inte med generella påståenden ("har relevant erfarenhet").
+
+SPRÅK:
+- Svara alltid på svenska i reason-fältet, även om jobbeskrivningen eller kandidatens CV är på engelska.
+- Använd kandidatens faktiska jobbtitlar och företagsnamn ordagrant i motiveringen (översätt eller parafrasera dem inte).
+
+Returnera alltid JSON. Max 2 meningar i reason-fältet.`;
 
 function buildPrompt(
   candidate: Candidate,

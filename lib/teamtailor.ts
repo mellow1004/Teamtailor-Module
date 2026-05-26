@@ -78,14 +78,34 @@ export async function getStagesForJob(jobId: string): Promise<Stage[]> {
 }
 
 export async function getCandidatesForJob(jobId: string): Promise<Candidate[]> {
-  const data = await ttFetch(
-    `/job-applications?filter%5Bjob%5D=${encodeURIComponent(jobId)}&include=candidate,stage&page%5Bsize%5D=30`
-  );
-  const included: any[] = Array.isArray(data?.included) ? data.included : [];
-  const findIncluded = (type: string, id: string) =>
-    included.find((i) => i.type === type && i.id === id);
+  const stages = await getStagesForJob(jobId);
+  const inbox = stages.find((s) => s.name.trim().toLowerCase() === "inbox");
+  if (!inbox) return [];
 
-  const applications: any[] = Array.isArray(data?.data) ? data.data : [];
+  const PAGE_SIZE = 30;
+  const MAX_PAGES = 50;
+  const applications: any[] = [];
+  const includedById = new Map<string, any>();
+
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const data = await ttFetch(
+      `/job-applications?filter%5Bjob%5D=${encodeURIComponent(jobId)}&filter%5Bstage%5D=${encodeURIComponent(inbox.id)}&include=candidate,stage&page%5Bsize%5D=${PAGE_SIZE}&page%5Bnumber%5D=${page}`
+    );
+    const pageApps: any[] = Array.isArray(data?.data) ? data.data : [];
+    const pageIncluded: any[] = Array.isArray(data?.included) ? data.included : [];
+    if (pageApps.length === 0) break;
+    applications.push(...pageApps);
+    for (const item of pageIncluded) {
+      includedById.set(`${item.type}:${item.id}`, item);
+    }
+    const pageCount: number = Number(data?.meta?.["page-count"]) || 0;
+    if (pageCount > 0 && page >= pageCount) break;
+    if (pageApps.length < PAGE_SIZE) break;
+  }
+
+  const findIncluded = (type: string, id: string) =>
+    includedById.get(`${type}:${id}`);
+
   const candidates: Candidate[] = [];
 
   for (const app of applications) {

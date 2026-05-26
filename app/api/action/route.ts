@@ -8,6 +8,50 @@ import {
 
 export const dynamic = "force-dynamic";
 
+async function resolveJobIdFromApplication(applicationId: string): Promise<string> {
+  const apiKey = process.env.TEAMTAILOR_API_KEY;
+  if (!apiKey) throw new Error("TEAMTAILOR_API_KEY saknas i .env.local");
+  const res = await fetch(
+    `https://api.teamtailor.com/v1/job-applications/${applicationId}`,
+    {
+      headers: {
+        Authorization: `Token token=${apiKey}`,
+        "X-Api-Version": "20180828",
+        Accept: "application/vnd.api+json",
+      },
+      cache: "no-store",
+    }
+  );
+  if (!res.ok) throw new Error(`Kunde inte hämta ansökan (HTTP ${res.status})`);
+  const data = await res.json();
+  const jobId: string | undefined = data?.data?.relationships?.job?.data?.id;
+  if (!jobId) throw new Error("Hittade inget jobb kopplat till ansökan");
+  return jobId;
+}
+
+export async function GET(req: NextRequest) {
+  const { searchParams } = req.nextUrl;
+  const jobIdParam = searchParams.get("jobId");
+  const applicationId = searchParams.get("applicationId");
+
+  if (!jobIdParam && !applicationId) {
+    return NextResponse.json(
+      { error: "jobId eller applicationId krävs" },
+      { status: 400 }
+    );
+  }
+  try {
+    const jobId = jobIdParam ?? (await resolveJobIdFromApplication(applicationId!));
+    const stages = await getStagesForJob(jobId);
+    return NextResponse.json({ stages });
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: err?.message || "Kunde inte hämta pipeline-steg" },
+      { status: 500 }
+    );
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();

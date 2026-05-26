@@ -1,5 +1,30 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
+type Stage = { id: string; name: string };
+
+const stagesCache = new Map<string, Promise<Stage[]>>();
+
+function fetchStagesFor(applicationId: string): Promise<Stage[]> {
+  const cached = stagesCache.get(applicationId);
+  if (cached) return cached;
+  const promise = fetch(
+    `/api/action?applicationId=${encodeURIComponent(applicationId)}`
+  )
+    .then(async (res) => {
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Kunde inte hämta steg");
+      return Array.isArray(data.stages) ? (data.stages as Stage[]) : [];
+    })
+    .catch((err) => {
+      stagesCache.delete(applicationId);
+      throw err;
+    });
+  stagesCache.set(applicationId, promise);
+  return promise;
+}
+
 export type CandidateResult = {
   candidateId: string;
   applicationId: string;
@@ -53,7 +78,55 @@ export function CandidateCard({
   cv,
 }: Props) {
   const style = decisionStyle[candidate.decision];
-  const disabled = action.status === "loading" || action.status === "done";
+
+  const [stages, setStages] = useState<Stage[]>([]);
+  const [selectedStageId, setSelectedStageId] = useState<string>("");
+  const [moveStatus, setMoveStatus] = useState<ActionStatus>({ status: "idle" });
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchStagesFor(candidate.applicationId)
+      .then((s) => {
+        if (!cancelled) setStages(s);
+      })
+      .catch(() => {
+        // dropdown stays empty; "Flytta"-knappen blir disabled
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [candidate.applicationId]);
+
+  async function runMove() {
+    if (!selectedStageId) return;
+    setMoveStatus({ status: "loading" });
+    try {
+      const res = await fetch("/api/action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "move",
+          applicationId: candidate.applicationId,
+          stageId: selectedStageId,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Fel");
+      const stageName = stages.find((s) => s.id === selectedStageId)?.name ?? "valt steg";
+      setMoveStatus({ status: "done", message: `Flyttad till ${stageName}` });
+    } catch (err: any) {
+      setMoveStatus({ status: "error", message: err?.message || "Något gick fel" });
+    }
+  }
+
+  const disabled =
+    action.status === "loading" ||
+    action.status === "done" ||
+    moveStatus.status === "loading" ||
+    moveStatus.status === "done";
+
+  const displayStatus: ActionStatus =
+    moveStatus.status !== "idle" ? moveStatus : action;
 
   return (
     <div
@@ -71,7 +144,28 @@ export function CandidateCard({
             aria-label={`Markera ${candidate.fullName}`}
           />
           <div className="min-w-0">
-            <h3 className="text-lg font-semibold text-gray-900 truncate">{candidate.fullName}</h3>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <h3 className="text-lg font-semibold text-gray-900 truncate">{candidate.fullName}</h3>
+              <a
+                href={`https://app.teamtailor.com/candidates/${candidate.candidateId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Öppna i Teamtailor"
+                aria-label={`Öppna ${candidate.fullName} i Teamtailor`}
+                className="shrink-0 text-gray-400 hover:text-brand-600 transition"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  className="w-4 h-4"
+                  aria-hidden="true"
+                >
+                  <path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z" />
+                  <path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z" />
+                </svg>
+              </a>
+            </div>
             {candidate.title && (
               <p className="text-sm text-gray-600 truncate">{candidate.title}</p>
             )}
@@ -146,31 +240,49 @@ export function CandidateCard({
         </div>
       )}
 
-      <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
-        <button
-          onClick={() => onRunAction("approve")}
-          disabled={disabled}
-          className="flex-1 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white text-sm font-medium transition"
-        >
-          First Interview
-        </button>
+      <div className="flex flex-col gap-2 pt-2 border-t border-gray-100">
+        <div className="flex items-center gap-2">
+          <select
+            value={selectedStageId}
+            onChange={(e) => setSelectedStageId(e.target.value)}
+            disabled={disabled || stages.length === 0}
+            className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-brand-500"
+            aria-label="Välj pipeline-steg"
+          >
+            <option value="">
+              {stages.length === 0 ? "Laddar steg…" : "— välj steg —"}
+            </option>
+            {stages.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={runMove}
+            disabled={disabled || !selectedStageId}
+            className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white text-sm font-medium transition"
+          >
+            Flytta
+          </button>
+        </div>
         <button
           onClick={() => onRunAction("reject")}
           disabled={disabled}
-          className="flex-1 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white text-sm font-medium transition"
+          className="w-full px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white text-sm font-medium transition"
         >
           Reject
         </button>
       </div>
 
-      {action.status === "loading" && (
+      {displayStatus.status === "loading" && (
         <p className="text-xs text-gray-500 text-center">Skickar till Teamtailor…</p>
       )}
-      {action.status === "done" && (
-        <p className="text-xs text-green-700 text-center font-medium">✓ {action.message}</p>
+      {displayStatus.status === "done" && (
+        <p className="text-xs text-green-700 text-center font-medium">✓ {displayStatus.message}</p>
       )}
-      {action.status === "error" && (
-        <p className="text-xs text-red-700 text-center">{action.message}</p>
+      {displayStatus.status === "error" && (
+        <p className="text-xs text-red-700 text-center">{displayStatus.message}</p>
       )}
     </div>
   );

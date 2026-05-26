@@ -9,6 +9,7 @@ const NUMBERS: Record<string, number> = {
 const NUM_TOKEN = `(?:${Object.keys(NUMBERS).join("|")}|\\d+)`;
 const TRAILING_NOUN = "(?:forsta|kandidater|personer|ansokningar|stycken|st)";
 const LEADING_CUE = "(?:forsta|topp|top|max|bara|endast|hogst)";
+const SUPERLATIVE = "(?:mest\\s+\\w+|\\w+aste|basta|varsta|minsta|storsta|samsta|hogsta|lagsta)";
 
 function normalize(s: string): string {
   return s
@@ -41,6 +42,14 @@ export function parseLimit(instruction: string): number | null {
   );
   if (after) {
     const n = toNumber(after[1]);
+    if (n && n > 0) return n;
+  }
+
+  const adjective = text.match(
+    new RegExp(`\\bde\\s+(${NUM_TOKEN})\\s+${SUPERLATIVE}\\b`)
+  );
+  if (adjective) {
+    const n = toNumber(adjective[1]);
     if (n && n > 0) return n;
   }
 
