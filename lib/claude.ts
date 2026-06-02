@@ -7,6 +7,7 @@ export type Decision = {
   decision: "approve" | "reject" | "maybe";
   reason: string;
   score: number;
+  flags: string[];
 };
 
 const MODEL = "claude-sonnet-4-5";
@@ -47,6 +48,21 @@ SPRÅK:
 - Svara alltid på svenska i reason-fältet, även om jobbeskrivningen eller kandidatens CV är på engelska.
 - Använd kandidatens faktiska jobbtitlar och företagsnamn ordagrant i motiveringen (översätt eller parafrasera dem inte).
 
+RÖDA FLAGGOR (fält: "flags"):
+Returnera en lista med korta etiketter (1–4 ord vardera) för varje röd flagga kandidaten triggar. Lämna listan tom om inga gäller. Kolla alltid efter:
+- "Inget eget bolag" — om rollen kräver fakturering/F-skatt men kandidaten saknar tydligt eget bolag.
+- "Hög lönförväntan" — om angiven löneförväntning i screeningsvar eller cover letter klart överstiger vad som är rimligt för rollen och nivån.
+- "Job hopping" — om kandidaten haft ≥3 anställningar på <12 månader vardera i rad.
+- "Lucka i CV utan förklaring" — om det finns en sammanhängande period på ≥12 månader utan dokumenterad sysselsättning eller motivering.
+- "Saknar relevant erfarenhet" — om kandidaten inte har någon yrkeserfarenhet alls som kan kopplas till rollen.
+Lägg endast med flaggor du faktiskt kan belägga från profilen, inte spekulationer.
+
+SCREENINGSVAR (hård filtrering):
+- Läs igenom ALLA screeningsvar innan du sätter decision och flags.
+- Ett svar är "diskvalificerande" när det direkt motsäger ett krav i rollen — t.ex. frågan "Kan du fakturera oss?" besvarad "Nej" för en konsultroll, eller "Har du svenskt arbetstillstånd?" besvarad "Nej" när det krävs.
+- För varje diskvalificerande svar: lägg in en flag-post med EXAKT formatet "Svar på '[frågan]': [svaret]" (citattecken runt frågetexten). Detta är ett undantag från 1–4-ords-regeln ovan.
+- Kandidater med minst ett diskvalificerande screeningsvar ska ALLTID få decision: "reject", oavsett hur stark profilen är i övrigt. I reason-fältet kan du då hänvisa till screeningfrågan.
+
 Returnera alltid JSON. Max 2 meningar i reason-fältet.`;
 
 function buildPrompt(
@@ -82,34 +98,66 @@ Returnera ENDAST ett JSON-objekt på exakt detta format (inga andra tecken före
 {
   "decision": "approve" | "reject" | "maybe",
   "reason": "kort motivering på svenska, max 2 meningar",
-  "score": <heltal 1-10>
+  "score": <heltal 1-10>,
+  "flags": ["kort etikett", "..."]
 }`;
 }
 
-function extractJson(text: string): { decision: string; reason: string; score: number } {
+function extractJson(text: string): {
+  decision: string;
+  reason: string;
+  score: number;
+  flags?: unknown;
+} {
   const match = text.match(/\{[\s\S]*\}/);
   if (!match) throw new Error("Inget JSON-objekt hittades i Claudes svar");
   return JSON.parse(match[0]);
 }
+
+export type CvExperience = {
+  company: string;
+  role: string;
+  duration: string;
+};
 
 export type CvAnalysis = {
   summary: string;
   score: number;
   strengths: string[];
   concerns: string[];
+  experience: CvExperience[];
 };
 
-const CV_SYSTEM_PROMPT =
-  "Du är en expert rekryteringsassistent som analyserar CV:n. Returnera alltid JSON. Svara på svenska.";
+const CV_SYSTEM_PROMPT = `Du är en expert rekryteringsassistent som analyserar CV:n. Returnera alltid JSON. Svara på svenska.
+
+Riktlinjer för "summary":
+- Max 2 meningar. Skriv bara det MEST relevanta för en rekryterare som snabbt vill bedöma kandidaten.
+- Undvik fluff. Nämn senioritetsnivå, huvudsaklig kompetensprofil och vad kandidaten är känd för i sin senaste roll.
+
+Riktlinjer för "experience":
+- Lista kandidatens yrkeserfarenheter i fallande kronologisk ordning (senaste först).
+- För varje post: bolagsnamn ordagrant, exakt rolltitel ordagrant, och "duration" som ett människoläsbart spann på svenska (t.ex. "2 år 3 månader", "8 månader", "5+ år").
+- Räkna duration utifrån datumen i CV:t. Är slutdatum tomt eller "Pågående", räkna till idag.
+- Hoppa över utbildning, praktik utan företag, och uppdrag som inte har både ett tydligt företagsnamn och en titel.
+
+Riktlinjer för "strengths" och "concerns":
+- Varje punkt ska vara KORT och FAKTABASERAD — max 5–7 ord.
+- Lyft bara sådant som FAKTISKT står i CV:t. Inga egna slutsatser, tolkningar eller spekulationer.
+- Gör: "1 år på Stena Recycling", "MSc Computer Science KTH", "Certifierad AWS Solutions Architect".
+- Gör INTE: "Kort anställning som kan väcka frågor om orsak till avslut", "Verkar engagerad i AI", "Kan vara redo för nästa steg".
+- "strengths" = positiva fakta värda att framhäva. "concerns" = neutrala fakta som rekryteraren bör notera (korta anställningar, byten, luckor — utan att tolka dem).`;
 
 function buildCvPrompt(cvText: string): string {
   const trimmed = cvText.length > 18000 ? cvText.slice(0, 18000) + "\n[avkortat]" : cvText;
   return `Analysera följande CV och returnera ENDAST ett JSON-objekt på exakt detta format (inga andra tecken före eller efter):
 {
-  "summary": "kort sammanfattning på svenska, max 3 meningar",
+  "summary": "max 2 meningar — det mest relevanta för en rekryterare",
   "score": <heltal 1-10 baserat på övergripande styrka>,
   "strengths": ["styrka 1", "styrka 2", "styrka 3"],
-  "concerns": ["farhåga 1", "farhåga 2"]
+  "concerns": ["farhåga 1", "farhåga 2"],
+  "experience": [
+    { "company": "Bolagsnamn", "role": "Titel", "duration": "2 år 3 månader" }
+  ]
 }
 
 CV-text:
@@ -123,7 +171,7 @@ export async function analyzeCv(cvText: string): Promise<CvAnalysis> {
   const client = new Anthropic({ apiKey });
   const message = await client.messages.create({
     model: MODEL,
-    max_tokens: 800,
+    max_tokens: 1500,
     system: CV_SYSTEM_PROMPT,
     messages: [{ role: "user", content: buildCvPrompt(cvText) }],
   });
@@ -134,11 +182,25 @@ export async function analyzeCv(cvText: string): Promise<CvAnalysis> {
   if (!match) throw new Error("Inget JSON-objekt hittades i Claudes svar");
   const parsed = JSON.parse(match[0]);
 
+  const experience: CvExperience[] = Array.isArray(parsed.experience)
+    ? (parsed.experience as unknown[])
+        .map((e) => {
+          const obj = (e ?? {}) as Record<string, unknown>;
+          return {
+            company: String(obj.company ?? "").trim(),
+            role: String(obj.role ?? "").trim(),
+            duration: String(obj.duration ?? "").trim(),
+          };
+        })
+        .filter((e) => e.company.length > 0 && e.role.length > 0)
+    : [];
+
   return {
     summary: String(parsed.summary || "Ingen sammanfattning"),
     score: Math.max(1, Math.min(10, Math.round(Number(parsed.score) || 5))),
     strengths: Array.isArray(parsed.strengths) ? parsed.strengths.map(String) : [],
     concerns: Array.isArray(parsed.concerns) ? parsed.concerns.map(String) : [],
+    experience,
   };
 }
 
@@ -157,7 +219,7 @@ export async function processCandidates(
       try {
         const message = await client.messages.create({
           model: MODEL,
-          max_tokens: 500,
+          max_tokens: 700,
           system: SYSTEM_PROMPT,
           messages: [{ role: "user", content: buildPrompt(cand, instruction, jobDescription) }],
         });
@@ -173,12 +235,19 @@ export async function processCandidates(
 
         const score = Math.max(1, Math.min(10, Math.round(Number(parsed.score) || 5)));
 
+        const flags = Array.isArray(parsed.flags)
+          ? (parsed.flags as unknown[])
+              .map((f) => String(f).trim())
+              .filter((f) => f.length > 0)
+          : [];
+
         return {
           candidateId: cand.candidateId,
           applicationId: cand.applicationId,
           decision,
           reason: parsed.reason || "Ingen motivering.",
           score,
+          flags,
         } satisfies Decision;
       } catch (err: any) {
         return {
@@ -187,6 +256,7 @@ export async function processCandidates(
           decision: "maybe" as const,
           reason: `Kunde inte analysera: ${err?.message || "okänt fel"}`,
           score: 5,
+          flags: [],
         };
       }
     })

@@ -34,6 +34,7 @@ export type CandidateResult = {
   decision: "approve" | "reject" | "maybe";
   reason: string;
   score: number;
+  flags?: string[];
 };
 
 export type ActionStatus =
@@ -41,6 +42,12 @@ export type ActionStatus =
   | { status: "loading" }
   | { status: "done"; message: string }
   | { status: "error"; message: string };
+
+export type CvExperience = {
+  company: string;
+  role: string;
+  duration: string;
+};
 
 export type CvState =
   | { status: "idle" }
@@ -51,6 +58,7 @@ export type CvState =
       score: number;
       strengths: string[];
       concerns: string[];
+      experience?: CvExperience[];
     }
   | { status: "unavailable"; error: string };
 
@@ -188,6 +196,21 @@ export function CandidateCard({
 
       <p className="text-sm text-gray-700 leading-relaxed">{candidate.reason}</p>
 
+      {candidate.flags && candidate.flags.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {candidate.flags.map((flag, i) => (
+            <span
+              key={i}
+              className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-800"
+              title="Röd flagga från CV-/profilanalysen"
+            >
+              <span aria-hidden="true">⚑</span>
+              {flag}
+            </span>
+          ))}
+        </div>
+      )}
+
       {cv.status !== "idle" && (
         <div className="border-t border-gray-100 pt-3">
           <div className="flex items-center justify-between mb-2">
@@ -215,6 +238,26 @@ export function CandidateCard({
           {cv.status === "ok" && (
             <div className="flex flex-col gap-2">
               <p className="text-sm text-gray-700">{cv.summary}</p>
+              {(cv.experience ?? []).length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-gray-700 mb-1">Erfarenhet</p>
+                  <ul className="text-xs text-gray-600 space-y-0.5">
+                    {(cv.experience ?? []).map((e, i) => (
+                      <li key={i} className="truncate">
+                        <span className="font-medium text-gray-900">{e.company}</span>
+                        {" · "}
+                        <span>{e.role}</span>
+                        {e.duration && (
+                          <>
+                            {" · "}
+                            <span className="text-gray-500">{e.duration}</span>
+                          </>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {cv.strengths.length > 0 && (
                 <div>
                   <p className="text-xs font-medium text-green-700 mb-1">Styrkor</p>
@@ -227,7 +270,7 @@ export function CandidateCard({
               )}
               {cv.concerns.length > 0 && (
                 <div>
-                  <p className="text-xs font-medium text-red-700 mb-1">Farhågor</p>
+                  <p className="text-xs font-medium text-red-700 mb-1">Svagheter</p>
                   <ul className="text-xs text-gray-700 list-disc list-inside space-y-0.5">
                     {cv.concerns.map((c, i) => (
                       <li key={i}>{c}</li>

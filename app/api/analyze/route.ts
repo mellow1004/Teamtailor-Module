@@ -35,7 +35,7 @@ async function fetchJobDescription(jobId: string): Promise<string> {
 
 export async function POST(req: NextRequest) {
   try {
-    const { jobId, instruction } = await req.json();
+    const { jobId, instruction, cachedIds } = await req.json();
     if (!jobId || !instruction) {
       return NextResponse.json(
         { error: "jobId och instruction krävs" },
@@ -43,14 +43,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const cachedSet = new Set<string>(
+      Array.isArray(cachedIds) ? cachedIds.map(String) : []
+    );
+
     const [allCandidates, jobDescription] = await Promise.all([
       getCandidatesForJob(jobId),
       fetchJobDescription(jobId),
     ]);
 
     const limit = parseLimit(instruction);
-    const candidates =
+    const considered =
       limit && limit > 0 ? allCandidates.slice(0, limit) : allCandidates;
+    const candidates = considered.filter((c) => !cachedSet.has(c.applicationId));
 
     const decisions = await processCandidates(candidates, instruction, jobDescription);
 
@@ -61,6 +66,7 @@ export async function POST(req: NextRequest) {
         decision: d?.decision || "maybe",
         reason: d?.reason || "Ingen motivering",
         score: d?.score ?? 5,
+        flags: d?.flags ?? [],
       };
     });
 
@@ -68,6 +74,7 @@ export async function POST(req: NextRequest) {
       results: merged,
       total: allCandidates.length,
       analyzed: candidates.length,
+      skipped: considered.length - candidates.length,
       limit,
     });
   } catch (err: any) {

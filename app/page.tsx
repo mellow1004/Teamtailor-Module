@@ -48,6 +48,48 @@ function removeResults(jobId: string) {
   }
 }
 
+const CANDIDATE_CACHE_PREFIX = "candidate-result-";
+
+function loadCachedResult(applicationId: string): CandidateResult | null {
+  if (!applicationId || typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(
+      `${CANDIDATE_CACHE_PREFIX}${applicationId}`
+    );
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? (parsed as CandidateResult) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedResult(result: CandidateResult) {
+  if (!result?.applicationId || typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      `${CANDIDATE_CACHE_PREFIX}${result.applicationId}`,
+      JSON.stringify(result)
+    );
+  } catch {
+    // ignore quota/storage errors
+  }
+}
+
+function clearAllCachedResults() {
+  if (typeof window === "undefined") return;
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const key = window.localStorage.key(i);
+      if (key && key.startsWith(CANDIDATE_CACHE_PREFIX)) keys.push(key);
+    }
+    for (const key of keys) window.localStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+}
+
 export default function Home() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [jobId, setJobId] = useState<string>("");
@@ -55,6 +97,8 @@ export default function Home() {
   const [loading, setLoading] = useState<boolean>(false);
   const [loadingText, setLoadingText] = useState<string>("");
   const [results, setResults] = useState<CandidateResult[]>([]);
+  const [requestedLimit, setRequestedLimit] = useState<number | null>(null);
+  const [savedCount, setSavedCount] = useState<number>(0);
   const [error, setError] = useState<string>("");
   const [jobsError, setJobsError] = useState<string>("");
 
@@ -97,28 +141,46 @@ export default function Home() {
         body: JSON.stringify({ jobId }),
       });
       const countData = await countRes.json();
-      const total = countData.candidates?.length ?? 0;
+      const candidates: Array<{ applicationId: string }> = countData.candidates || [];
+      const total = candidates.length;
       const limit = parseLimit(instruction);
-      const toAnalyze = limit && limit > 0 ? Math.min(limit, total) : total;
+      const considered = limit && limit > 0 ? candidates.slice(0, limit) : candidates;
+
+      const cachedIds: string[] = [];
+      const cachedResults: CandidateResult[] = [];
+      for (const c of considered) {
+        const cached = loadCachedResult(c.applicationId);
+        if (cached) {
+          cachedIds.push(c.applicationId);
+          cachedResults.push(cached);
+        }
+      }
+
+      const freshCount = considered.length - cachedIds.length;
       setLoadingText(
-        limit && limit < total
-          ? `Analyserar ${toAnalyze} av ${total} kandidater…`
-          : `Analyserar ${toAnalyze} kandidater…`
+        cachedIds.length > 0
+          ? `Analyserar ${freshCount} nya kandidater (${cachedIds.length} cachade)…`
+          : limit && limit < total
+            ? `Analyserar ${considered.length} av ${total} kandidater…`
+            : `Analyserar ${considered.length} kandidater…`
       );
 
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobId, instruction }),
+        body: JSON.stringify({ jobId, instruction, cachedIds }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Analys misslyckades");
 
-      const sortedResults = [...(data.results || [])].sort(
-        (a: CandidateResult, b: CandidateResult) => b.score - a.score
-      );
+      const fresh: CandidateResult[] = data.results || [];
+      for (const r of fresh) saveCachedResult(r);
+      const merged = [...fresh, ...cachedResults];
+      const sortedResults = merged.sort((a, b) => b.score - a.score);
       setResults(sortedResults);
+      setRequestedLimit(typeof data.limit === "number" ? data.limit : null);
       saveResults(jobId, sortedResults);
+      setSavedCount(sortedResults.length);
     } catch (err: any) {
       setError(err?.message || "Något gick fel");
     } finally {
@@ -135,15 +197,30 @@ export default function Home() {
     setActionByApp({});
     setCvByApp({});
     setError("");
-    setResults(newJobId ? loadResults(newJobId) : []);
+    setRequestedLimit(null);
+    setResults([]);
+    setSavedCount(newJobId ? loadResults(newJobId).length : 0);
+  }
+
+  function loadSavedResults() {
+    if (!jobId) return;
+    const saved = loadResults(jobId);
+    if (saved.length === 0) return;
+    setResults(saved);
   }
 
   function clearResults() {
     setResults([]);
+    setRequestedLimit(null);
     setSelected(new Set());
     setActionByApp({});
     setCvByApp({});
+    setSavedCount(0);
     if (jobId) removeResults(jobId);
+  }
+
+  function clearCache() {
+    clearAllCachedResults();
   }
 
   function toggleSelectAll() {
@@ -241,6 +318,7 @@ export default function Home() {
           score: r.score,
           strengths: r.strengths || [],
           concerns: r.concerns || [],
+          experience: r.experience || [],
         },
       }));
     } catch (err: any) {
@@ -303,6 +381,20 @@ export default function Home() {
             {jobsError && (
               <p className="mt-2 text-xs text-red-600">{jobsError}</p>
             )}
+            {jobId && savedCount > 0 && results.length === 0 && !loading && (
+              <div className="mt-2 flex items-center gap-2 text-xs text-gray-600">
+                <span>
+                  Du har tidigare analyserat {savedCount} kandidater för detta jobb. Vill du läsa in dem?
+                </span>
+                <button
+                  type="button"
+                  onClick={loadSavedResults}
+                  className="text-brand-600 hover:text-brand-700 font-medium underline-offset-2 hover:underline transition"
+                >
+                  Läs in tidigare resultat
+                </button>
+              </div>
+            )}
           </div>
 
           <div>
@@ -352,6 +444,13 @@ export default function Home() {
               >
                 Rensa resultat
               </button>
+              <button
+                onClick={clearCache}
+                title="Tar bort sparade poäng per kandidat — nästa analys bedöms helt på nytt"
+                className="text-sm text-gray-600 hover:text-gray-900 underline-offset-2 hover:underline transition"
+              >
+                Rensa cache
+              </button>
             </div>
 
             <div className="flex items-center gap-3">
@@ -387,6 +486,29 @@ export default function Home() {
               </div>
             </div>
           </div>
+
+          {(() => {
+            const approvedCount = results.filter((r) => r.decision === "approve").length;
+            const maxScore = results.reduce((m, r) => Math.max(m, r.score), 0);
+            if (approvedCount === 0) {
+              return (
+                <div className="mb-4 rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-900">
+                  Inga tillräckligt starka kandidater hittades för denna instruktion. Bästa tillgängliga kandidat fick {maxScore}/10.
+                </div>
+              );
+            }
+            if (
+              requestedLimit !== null &&
+              requestedLimit > approvedCount
+            ) {
+              return (
+                <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+                  Endast {approvedCount} av efterfrågade {requestedLimit} kandidater uppfyllde kriterierna.
+                </div>
+              );
+            }
+            return null;
+          })()}
 
           <div className="grid sm:grid-cols-2 gap-4">
             {results.map((c) => (

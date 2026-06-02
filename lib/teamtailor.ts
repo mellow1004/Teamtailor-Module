@@ -78,13 +78,30 @@ export async function getStagesForJob(jobId: string): Promise<Stage[]> {
 }
 
 export async function getCandidatesForJob(jobId: string): Promise<Candidate[]> {
+  const sleep = (ms: number) =>
+    new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+  const fetchPage = async (path: string): Promise<any> => {
+    try {
+      return await ttFetch(path);
+    } catch (err: any) {
+      if (/Teamtailor 429/.test(String(err?.message))) {
+        await sleep(2000);
+        return await ttFetch(path);
+      }
+      throw err;
+    }
+  };
+
   const PAGE_SIZE = 30;
   const MAX_PAGES = 50;
+  const PAGE_DELAY_MS = 500;
   const applications: any[] = [];
   const includedById = new Map<string, any>();
 
   for (let page = 1; page <= MAX_PAGES; page++) {
-    const data = await ttFetch(
+    if (page > 1) await sleep(PAGE_DELAY_MS);
+    const data = await fetchPage(
       `/job-applications?filter%5Bjob%5D=${encodeURIComponent(jobId)}&include=candidate,stage&page%5Bsize%5D=${PAGE_SIZE}&page%5Bnumber%5D=${page}`
     );
     const pageApps: any[] = Array.isArray(data?.data) ? data.data : [];
@@ -177,12 +194,13 @@ export async function moveCandidate(applicationId: string, stageId: string) {
 }
 
 export async function rejectCandidate(applicationId: string) {
-  return ttFetch(`/job-applications/${applicationId}/reject`, {
-    method: "POST",
+  return ttFetch(`/job-applications/${applicationId}`, {
+    method: "PATCH",
     body: JSON.stringify({
       data: {
-        type: "application-rejections",
-        attributes: { "send-mail": false },
+        id: applicationId,
+        type: "job-applications",
+        attributes: { rejected: true },
       },
     }),
   });
