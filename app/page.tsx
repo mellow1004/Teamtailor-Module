@@ -510,6 +510,24 @@ export default function Home() {
             return null;
           })()}
 
+          {(() => {
+            const screeningRejects = results.filter((r) => {
+              if (r.decision !== "reject") return false;
+              const reason = (r.reason || "").toLowerCase();
+              if (reason.includes("screening") || reason.includes("screeningfråga")) {
+                return true;
+              }
+              const flags = r.flags ?? [];
+              return flags.some((f) => typeof f === "string" && f.startsWith("Svar på"));
+            }).length;
+            if (screeningRejects === 0) return null;
+            return (
+              <p className="mb-4 text-xs text-gray-500">
+                {screeningRejects} kandidater föll bort på grund av screeningfrågor
+              </p>
+            );
+          })()}
+
           <div className="grid sm:grid-cols-2 gap-4">
             {results.map((c) => (
               <CandidateCard
