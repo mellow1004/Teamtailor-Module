@@ -513,12 +513,8 @@ export default function Home() {
           {(() => {
             const screeningRejects = results.filter((r) => {
               if (r.decision !== "reject") return false;
-              const reason = (r.reason || "").toLowerCase();
-              if (reason.includes("screening") || reason.includes("screeningfråga")) {
-                return true;
-              }
-              const flags = r.flags ?? [];
-              return flags.some((f) => typeof f === "string" && f.startsWith("Svar på"));
+              const reason = (r.reason || "").trim().toLowerCase();
+              return reason.startsWith("screeningfråga:");
             }).length;
             if (screeningRejects === 0) return null;
             return (

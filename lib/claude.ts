@@ -61,7 +61,8 @@ SCREENINGSVAR (hård filtrering):
 - Läs igenom ALLA screeningsvar innan du sätter decision och flags.
 - Ett svar är "diskvalificerande" när det direkt motsäger ett krav i rollen — t.ex. frågan "Kan du fakturera oss?" besvarad "Nej" för en konsultroll, eller "Har du svenskt arbetstillstånd?" besvarad "Nej" när det krävs.
 - För varje diskvalificerande svar: lägg in en flag-post med EXAKT formatet "Svar på '[frågan]': [svaret]" (citattecken runt frågetexten). Detta är ett undantag från 1–4-ords-regeln ovan.
-- Kandidater med minst ett diskvalificerande screeningsvar ska ALLTID få decision: "reject", oavsett hur stark profilen är i övrigt. I reason-fältet kan du då hänvisa till screeningfrågan.
+- Kandidater med minst ett diskvalificerande screeningsvar ska ALLTID få decision: "reject", oavsett hur stark profilen är i övrigt.
+- När orsaken är ett screeningsvar MÅSTE reason-fältet börja med exakt texten "Screeningfråga:" (med kolon, första bokstaven versal) följt av förklaringen — t.ex. "Screeningfråga: Svarade Nej på 'Do you have your own company'." Inga andra reject-orsaker får använda detta prefix.
 
 Returnera alltid JSON. Max 2 meningar i reason-fältet.`;
 
