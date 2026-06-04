@@ -7,7 +7,7 @@ const NUMBERS: Record<string, number> = {
 };
 
 const NUM_TOKEN = `(?:${Object.keys(NUMBERS).join("|")}|\\d+)`;
-const TRAILING_NOUN = "(?:forsta|kandidater|personer|ansokningar|stycken|st)";
+const TRAILING_NOUN = "(?:forsta|kandidaterna|kandidater|personer|ansokningar|stycken|st)";
 const LEADING_CUE = "(?:forsta|topp|top|max|bara|endast|hogst)";
 const SUPERLATIVE = "(?:mest\\s+\\w+|\\w+aste|basta|varsta|minsta|storsta|samsta|hogsta|lagsta)";
 

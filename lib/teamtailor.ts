@@ -139,17 +139,40 @@ export async function getCandidatesForJob(jobId: string): Promise<Candidate[]> {
 
     let screeningAnswers: Array<{ question: string; answer: string }> = [];
     try {
-      const ans = await ttFetch(`/job-applications/${app.id}/answers?include=question`);
+      const ans = await ttFetch(`/candidates/${cand.id}/answers?include=question`);
       const ansIncluded: any[] = Array.isArray(ans?.included) ? ans.included : [];
       const ansData: any[] = Array.isArray(ans?.data) ? ans.data : [];
-      screeningAnswers = ansData.map((a) => {
-        const qRef = a.relationships?.question?.data;
-        const q = qRef ? ansIncluded.find((i) => i.type === "questions" && i.id === qRef.id) : null;
-        return {
-          question: q?.attributes?.title || "Fråga",
-          answer: a.attributes?.value || a.attributes?.answer || "",
-        };
-      });
+      screeningAnswers = ansData
+        .map((a) => {
+          const qRef = a.relationships?.question?.data;
+          const q = qRef
+            ? ansIncluded.find((i) => i.type === "questions" && i.id === qRef.id)
+            : null;
+          const attrs = a.attributes || {};
+
+          let value = "";
+          if (typeof attrs.boolean === "boolean") {
+            value = attrs.boolean ? "Ja" : "Nej";
+          } else if (Array.isArray(attrs.answer)) {
+            value = attrs.answer.filter(Boolean).join(", ");
+          } else if (typeof attrs.answer === "string" && attrs.answer.trim()) {
+            value = attrs.answer.trim();
+          } else if (typeof attrs.text === "string" && attrs.text.trim()) {
+            value = attrs.text.trim();
+          } else if (typeof attrs.number === "number") {
+            value = String(attrs.number);
+          } else if (typeof attrs.range === "number") {
+            value = String(attrs.range);
+          } else if (attrs.date) {
+            value = String(attrs.date);
+          }
+
+          return {
+            question: q?.attributes?.title || "Fråga",
+            answer: value,
+          };
+        })
+        .filter((qa) => qa.answer.length > 0);
     } catch {
       screeningAnswers = [];
     }
