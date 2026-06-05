@@ -35,7 +35,7 @@ async function fetchJobDescription(jobId: string): Promise<string> {
 
 export async function POST(req: NextRequest) {
   try {
-    const { jobId, instruction, cachedIds } = await req.json();
+    const { jobId, instruction, cachedIds, selectedStageIds } = await req.json();
     if (!jobId || !instruction) {
       return NextResponse.json(
         { error: "jobId och instruction krävs" },
@@ -46,9 +46,12 @@ export async function POST(req: NextRequest) {
     const cachedSet = new Set<string>(
       Array.isArray(cachedIds) ? cachedIds.map(String) : []
     );
+    const stageIds = Array.isArray(selectedStageIds)
+      ? selectedStageIds.map(String)
+      : [];
 
     const [allCandidates, jobDescription] = await Promise.all([
-      getCandidatesForJob(jobId),
+      getCandidatesForJob(jobId, stageIds),
       fetchJobDescription(jobId),
     ]);
 

@@ -5,11 +5,14 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
-    const { jobId } = await req.json();
+    const { jobId, selectedStageIds } = await req.json();
     if (!jobId) {
       return NextResponse.json({ error: "jobId saknas" }, { status: 400 });
     }
-    const candidates = await getCandidatesForJob(jobId);
+    const stageIds = Array.isArray(selectedStageIds)
+      ? selectedStageIds.map(String)
+      : [];
+    const candidates = await getCandidatesForJob(jobId, stageIds);
     return NextResponse.json({ candidates });
   } catch (err: any) {
     return NextResponse.json(

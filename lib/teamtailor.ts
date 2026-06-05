@@ -77,9 +77,22 @@ export async function getStagesForJob(jobId: string): Promise<Stage[]> {
   }));
 }
 
-export async function getCandidatesForJob(jobId: string): Promise<Candidate[]> {
+export async function getCandidatesForJob(
+  jobId: string,
+  selectedStageIds: string[] = []
+): Promise<Candidate[]> {
   const sleep = (ms: number) =>
     new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+  let allowedStageIds: Set<string>;
+  if (selectedStageIds.length > 0) {
+    allowedStageIds = new Set(selectedStageIds.map(String));
+  } else {
+    const stages = await getStagesForJob(jobId);
+    const inbox = stages.find((s) => s.name.trim().toLowerCase() === "inbox");
+    if (!inbox) return [];
+    allowedStageIds = new Set([inbox.id]);
+  }
 
   const fetchPage = async (path: string): Promise<any> => {
     try {
@@ -129,12 +142,11 @@ export async function getCandidatesForJob(jobId: string): Promise<Candidate[]> {
     if (!cand) continue;
 
     const stage = stageRef ? findIncluded("stages", stageRef.id) : null;
-    const stageName = String(stage?.attributes?.name || "").trim();
     const rejected = app.attributes?.rejected === true || !!app.attributes?.["rejected-at"];
     const disqualified =
       app.attributes?.disqualified === true || !!app.attributes?.["disqualified-at"];
 
-    if (stageName.toLowerCase() !== "inbox") continue;
+    if (!stageRef || !allowedStageIds.has(String(stageRef.id))) continue;
     if (rejected || disqualified) continue;
 
     let screeningAnswers: Array<{ question: string; answer: string }> = [];

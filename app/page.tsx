@@ -101,6 +101,9 @@ export default function Home() {
   const [savedCount, setSavedCount] = useState<number>(0);
   const [error, setError] = useState<string>("");
   const [jobsError, setJobsError] = useState<string>("");
+  const [stages, setStages] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedStageIds, setSelectedStageIds] = useState<Set<string>>(new Set());
+  const [inboxStageId, setInboxStageId] = useState<string>("");
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [actionByApp, setActionByApp] = useState<Record<string, ActionStatus>>({});
@@ -135,10 +138,11 @@ export default function Home() {
     setLoadingText("Hämtar kandidater…");
 
     try {
+      const stageIds = Array.from(selectedStageIds);
       const countRes = await fetch("/api/candidates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobId }),
+        body: JSON.stringify({ jobId, selectedStageIds: stageIds }),
       });
       const countData = await countRes.json();
       const candidates: Array<{ applicationId: string }> = countData.candidates || [];
@@ -168,7 +172,7 @@ export default function Home() {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobId, instruction, cachedIds }),
+        body: JSON.stringify({ jobId, instruction, cachedIds, selectedStageIds: stageIds }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Analys misslyckades");
@@ -200,6 +204,37 @@ export default function Home() {
     setRequestedLimit(null);
     setResults([]);
     setSavedCount(newJobId ? loadResults(newJobId).length : 0);
+    setStages([]);
+    setSelectedStageIds(new Set());
+    setInboxStageId("");
+    if (!newJobId) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/action?jobId=${encodeURIComponent(newJobId)}`);
+        const data = await res.json();
+        if (!res.ok) return;
+        const list: Array<{ id: string; name: string }> = Array.isArray(data.stages)
+          ? data.stages
+          : [];
+        setStages(list);
+        const inbox = list.find((s) => s.name.trim().toLowerCase() === "inbox");
+        const inboxId = inbox?.id || "";
+        setInboxStageId(inboxId);
+        setSelectedStageIds(new Set(inboxId ? [inboxId] : []));
+      } catch {
+        // ignore — fältet visas tomt om vi inte kan hämta steg
+      }
+    })();
+  }
+
+  function toggleStage(stageId: string) {
+    if (stageId === inboxStageId) return; // Inbox är låst
+    setSelectedStageIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(stageId)) next.delete(stageId);
+      else next.add(stageId);
+      return next;
+    });
   }
 
   function loadSavedResults() {
@@ -380,6 +415,33 @@ export default function Home() {
             </select>
             {jobsError && (
               <p className="mt-2 text-xs text-red-600">{jobsError}</p>
+            )}
+            {jobId && stages.length > 0 && (
+              <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-gray-600">
+                <span className="font-medium text-gray-700">Hämta från:</span>
+                {stages.map((s) => {
+                  const isInbox = s.id === inboxStageId;
+                  const checked = selectedStageIds.has(s.id);
+                  return (
+                    <label
+                      key={s.id}
+                      className={`inline-flex items-center gap-1.5 ${
+                        isInbox ? "text-gray-500" : "cursor-pointer hover:text-gray-900"
+                      }`}
+                      title={isInbox ? "Inbox är alltid med" : undefined}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={isInbox || loading}
+                        onChange={() => toggleStage(s.id)}
+                        className="h-3.5 w-3.5 rounded border-gray-300 text-brand-600 focus:ring-brand-500 disabled:opacity-60"
+                      />
+                      {s.name}
+                    </label>
+                  );
+                })}
+              </div>
             )}
             {jobId && savedCount > 0 && results.length === 0 && !loading && (
               <div className="mt-2 flex items-center gap-2 text-xs text-gray-600">
