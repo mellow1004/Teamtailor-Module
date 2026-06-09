@@ -12,7 +12,7 @@ async function resolveJobIdFromApplication(applicationId: string): Promise<strin
   const apiKey = process.env.TEAMTAILOR_API_KEY;
   if (!apiKey) throw new Error("TEAMTAILOR_API_KEY saknas i .env.local");
   const res = await fetch(
-    `https://api.teamtailor.com/v1/job-applications/${applicationId}`,
+    `https://api.teamtailor.com/v1/job-applications/${applicationId}?include=job`,
     {
       headers: {
         Authorization: `Token token=${apiKey}`,
@@ -24,7 +24,11 @@ async function resolveJobIdFromApplication(applicationId: string): Promise<strin
   );
   if (!res.ok) throw new Error(`Kunde inte hämta ansökan (HTTP ${res.status})`);
   const data = await res.json();
-  const jobId: string | undefined = data?.data?.relationships?.job?.data?.id;
+  let jobId: string | undefined = data?.data?.relationships?.job?.data?.id;
+  if (!jobId) {
+    const included: any[] = Array.isArray(data?.included) ? data.included : [];
+    jobId = included.find((i) => i.type === "jobs")?.id;
+  }
   if (!jobId) throw new Error("Hittade inget jobb kopplat till ansökan");
   return jobId;
 }

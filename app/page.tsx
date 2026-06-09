@@ -90,6 +90,27 @@ function clearAllCachedResults() {
   }
 }
 
+const PROMPT_TEMPLATES: Record<string, string[]> = {
+  Grundfiltrering: [
+    "Filtrera bort kandidater utan minst [antal] års erfarenhet av [kompetens].",
+    "Visa endast kandidater som har eget bolag och kan fakturera.",
+    "Filtrera bort kandidater som svarat Nej på fakturafrågan.",
+    "Endast kandidater som bor i [stad] eller är öppna för relokering till [stad].",
+  ],
+  Rangordning: [
+    "Hitta de [antal] starkaste kandidaterna baserat på erfarenhet av [kompetens].",
+    "Rangordna kandidaterna efter senioritet och tidigare bolagsstorlek.",
+    "De [antal] mest lämpliga för en seniorroll inom [område].",
+    "Topp [antal] kandidater med dokumenterad ledarerfarenhet.",
+  ],
+  "Specifika krav": [
+    "Hitta kandidater med erfarenhet av både [verktyg1] och [verktyg2].",
+    "Kandidater som arbetat på minst [antal] olika företag inom [bransch].",
+    "Kandidater med tydlig karriärprogression från junior till senior inom [område].",
+    "Engelsktalande kandidater med erfarenhet av internationell försäljning i [region].",
+  ],
+};
+
 export default function Home() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [jobId, setJobId] = useState<string>("");
@@ -98,12 +119,14 @@ export default function Home() {
   const [loadingText, setLoadingText] = useState<string>("");
   const [results, setResults] = useState<CandidateResult[]>([]);
   const [requestedLimit, setRequestedLimit] = useState<number | null>(null);
+  const [screeningRejects, setScreeningRejects] = useState<number>(0);
   const [savedCount, setSavedCount] = useState<number>(0);
   const [error, setError] = useState<string>("");
   const [jobsError, setJobsError] = useState<string>("");
   const [stages, setStages] = useState<Array<{ id: string; name: string }>>([]);
   const [selectedStageIds, setSelectedStageIds] = useState<Set<string>>(new Set());
   const [inboxStageId, setInboxStageId] = useState<string>("");
+  const [templatesOpen, setTemplatesOpen] = useState<boolean>(false);
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [actionByApp, setActionByApp] = useState<Record<string, ActionStatus>>({});
@@ -178,11 +201,15 @@ export default function Home() {
       if (!res.ok) throw new Error(data.error || "Analys misslyckades");
 
       const fresh: CandidateResult[] = data.results || [];
-      for (const r of fresh) saveCachedResult(r);
+      const allFresh: CandidateResult[] = Array.isArray(data.allCandidates)
+        ? data.allCandidates
+        : fresh;
+      for (const r of allFresh) saveCachedResult(r);
       const merged = [...fresh, ...cachedResults];
       const sortedResults = merged.sort((a, b) => b.score - a.score);
       setResults(sortedResults);
       setRequestedLimit(typeof data.limit === "number" ? data.limit : null);
+      setScreeningRejects(typeof data.screeningRejects === "number" ? data.screeningRejects : 0);
       saveResults(jobId, sortedResults);
       setSavedCount(sortedResults.length);
     } catch (err: any) {
@@ -202,6 +229,7 @@ export default function Home() {
     setCvByApp({});
     setError("");
     setRequestedLimit(null);
+    setScreeningRejects(0);
     setResults([]);
     setSavedCount(newJobId ? loadResults(newJobId).length : 0);
     setStages([]);
@@ -247,6 +275,7 @@ export default function Home() {
   function clearResults() {
     setResults([]);
     setRequestedLimit(null);
+    setScreeningRejects(0);
     setSelected(new Set());
     setActionByApp({});
     setCvByApp({});
@@ -460,9 +489,18 @@ export default function Home() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Instruktion till AI:n
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-gray-700">
+                Instruktion till AI:n
+              </label>
+              <button
+                type="button"
+                onClick={() => setTemplatesOpen((v) => !v)}
+                className="text-xs text-brand-600 hover:text-brand-700 font-medium underline-offset-2 hover:underline transition"
+              >
+                {templatesOpen ? "Dölj mallar" : "Använd mall ↓"}
+              </button>
+            </div>
             <textarea
               value={instruction}
               onChange={(e) => setInstruction(e.target.value)}
@@ -471,6 +509,38 @@ export default function Home() {
               className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent resize-y"
               disabled={loading}
             />
+
+            {templatesOpen && (
+              <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-4">
+                <p className="text-xs text-gray-500">
+                  Klicka på en mall för att fylla instruktionsrutan. Byt ut text i hakparenteser (t.ex. <code className="bg-white px-1 rounded">[antal]</code>) mot dina egna värden.
+                </p>
+                {Object.entries(PROMPT_TEMPLATES).map(([category, templates]) => (
+                  <div key={category}>
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
+                      {category}
+                    </h3>
+                    <ul className="space-y-1.5">
+                      {templates.map((tpl) => (
+                        <li key={tpl}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setInstruction(tpl);
+                              setTemplatesOpen(false);
+                            }}
+                            disabled={loading}
+                            className="w-full text-left text-sm text-gray-700 bg-white border border-gray-200 rounded-lg px-3 py-2 hover:border-brand-500 hover:bg-brand-50 disabled:bg-gray-100 disabled:cursor-not-allowed transition"
+                          >
+                            {tpl}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-3">
@@ -572,19 +642,11 @@ export default function Home() {
             return null;
           })()}
 
-          {(() => {
-            const screeningRejects = results.filter((r) => {
-              if (r.decision !== "reject") return false;
-              const reason = (r.reason || "").trim().toLowerCase();
-              return reason.startsWith("screeningfråga:");
-            }).length;
-            if (screeningRejects === 0) return null;
-            return (
-              <p className="mb-4 text-xs text-gray-500">
-                {screeningRejects} kandidater föll bort på grund av screeningfrågor
-              </p>
-            );
-          })()}
+          {screeningRejects > 0 && (
+            <p className="mb-4 text-xs text-gray-500">
+              {screeningRejects} kandidater föll bort på grund av screeningfrågor
+            </p>
+          )}
 
           <div className="grid sm:grid-cols-2 gap-4">
             {results.map((c) => (

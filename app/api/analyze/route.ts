@@ -55,10 +55,13 @@ export async function POST(req: NextRequest) {
       fetchJobDescription(jobId),
     ]);
 
-    const limit = parseLimit(instruction);
-    const considered =
-      limit && limit > 0 ? allCandidates.slice(0, limit) : allCandidates;
-    const candidates = considered.filter((c) => !cachedSet.has(c.applicationId));
+    const candidates = allCandidates.filter((c) => !cachedSet.has(c.applicationId));
+
+    console.log("[analyze] skickar till Claude", {
+      jobId,
+      count: candidates.length,
+      names: candidates.map((c) => c.fullName),
+    });
 
     const decisions = await processCandidates(candidates, instruction, jobDescription);
 
@@ -73,11 +76,26 @@ export async function POST(req: NextRequest) {
       };
     });
 
+    const limit = parseLimit(instruction);
+    const eligible = merged
+      .filter((m) => m.decision === "approve" || m.decision === "maybe")
+      .sort((a, b) => b.score - a.score);
+    const finalResults = limit && limit > 0 ? eligible.slice(0, limit) : eligible;
+
+    const screeningRejects = merged.filter((m) => {
+      if (m.decision !== "reject") return false;
+      const reason = (m.reason || "").trim().toLowerCase();
+      return reason.startsWith("screeningfråga:");
+    }).length;
+
     return NextResponse.json({
-      results: merged,
+      results: finalResults,
+      allCandidates: merged,
       total: allCandidates.length,
       analyzed: candidates.length,
-      skipped: considered.length - candidates.length,
+      skipped: allCandidates.length - candidates.length,
+      returned: finalResults.length,
+      screeningRejects,
       limit,
     });
   } catch (err: any) {
