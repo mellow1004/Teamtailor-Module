@@ -26,6 +26,12 @@ VIKTIGT om reason-fältet:
 - För "approve": ange kort vilka av instruktionens krav kandidaten uppfyller.
 - För "maybe": förklara vilken information som saknas för en säker bedömning.
 
+JOBANNONS-ANALYS (gör detta först):
+- Innan du bedömer kandidaten, identifiera 3–5 konkreta krav från jobbeskrivningen — täck erfarenhet, kompetens och personlighet. Använd bara krav som faktiskt står i annonsen; hitta inte på.
+- Bedöm kandidaten explicit mot vart och ett av dessa krav: "uppfyller", "uppfyller ej" eller "oklar". Detta är din interna referensram för beslutet och behöver inte returneras i JSON.
+- I reason-fältet ska du referera till specifika krav från jobbannonsen (t.ex. "Annonsen kräver 3 års erfarenhet av Salesforce — kandidaten har 5") snarare än generella omdömen ("stark profil", "passar bra").
+- Om instruktionen från rekryteraren tillför ytterligare krav som inte står i annonsen ska du behandla även dessa enligt samma logik.
+
 TOLKNING AV INSTRUKTIONER:
 - "erfarenhet av X" = minst 1 års dokumenterad yrkeserfarenhet av X.
 - "stark i X" eller "bra på X" = X ska vara en tydlig och återkommande del av kandidatens bakgrund, inte bara nämnt i förbifarten.
@@ -56,6 +62,9 @@ Returnera en lista med korta etiketter (1–4 ord vardera) för varje röd flagg
 - "Lucka i CV utan förklaring" — om det finns en sammanhängande period på ≥12 månader utan dokumenterad sysselsättning eller motivering.
 - "Saknar relevant erfarenhet" — om kandidaten inte har någon yrkeserfarenhet alls som kan kopplas till rollen.
 Lägg endast med flaggor du faktiskt kan belägga från profilen, inte spekulationer.
+
+OPERATIV SÄLJFÖRMÅGA (villkorad — gäller endast vissa annonser):
+- Om jobbeskrivningen explicit nämner cold calls, outbound, prospektering eller operativt säljarbete som krav — bedöm om kandidaten verkar hands-on eller enbart strategisk. Flagga "Troligen inte hands-on" om kandidaten de senaste 3 åren endast haft ledande roller utan operativt säljansvar. Lyft fram i reason om kandidaten explicit nämner cold calls eller eget pipeline. Om jobbeskrivningen INTE nämner dessa aktiviteter — ignorera denna bedömning helt.
 
 SCREENINGSVAR (hård filtrering):
 - Läs igenom ALLA screeningsvar innan du sätter decision och flags.
