@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCandidatesForJob } from "@/lib/teamtailor";
+import { getCandidatesForJob, getCVForCandidate } from "@/lib/teamtailor";
 import { processCandidates } from "@/lib/claude";
 import { parseLimit } from "@/lib/parseLimit";
 
@@ -35,7 +35,14 @@ async function fetchJobDescription(jobId: string): Promise<string> {
 
 export async function POST(req: NextRequest) {
   try {
-    const { jobId, instruction, cachedIds, selectedStageIds } = await req.json();
+    const {
+      jobId,
+      instruction,
+      cachedIds,
+      selectedStageIds,
+      preloadedCandidates,
+      includeCv,
+    } = await req.json();
     if (!jobId || !instruction) {
       return NextResponse.json(
         { error: "jobId och instruction krävs" },
@@ -50,8 +57,13 @@ export async function POST(req: NextRequest) {
       ? selectedStageIds.map(String)
       : [];
 
+    const hasPreloaded =
+      Array.isArray(preloadedCandidates) && preloadedCandidates.length > 0;
+
     const [allCandidates, jobDescription] = await Promise.all([
-      getCandidatesForJob(jobId, stageIds),
+      hasPreloaded
+        ? Promise.resolve(preloadedCandidates)
+        : getCandidatesForJob(jobId, stageIds),
       fetchJobDescription(jobId),
     ]);
 
@@ -61,9 +73,32 @@ export async function POST(req: NextRequest) {
       jobId,
       count: candidates.length,
       names: candidates.map((c) => c.fullName),
+      includeCv: !!includeCv,
     });
 
-    const decisions = await processCandidates(candidates, instruction, jobDescription);
+    let cvByApplicationId: Record<string, string> | undefined;
+    if (includeCv && candidates.length > 0) {
+      const cvEntries = await Promise.all(
+        candidates.map(async (c) => {
+          try {
+            const cv = await getCVForCandidate(c.candidateId);
+            return [c.applicationId, cv] as const;
+          } catch {
+            return [c.applicationId, ""] as const;
+          }
+        })
+      );
+      cvByApplicationId = Object.fromEntries(
+        cvEntries.filter(([, cv]) => cv.length > 0)
+      );
+    }
+
+    const decisions = await processCandidates(
+      candidates,
+      instruction,
+      jobDescription,
+      cvByApplicationId
+    );
 
     const merged = candidates.map((c) => {
       const d = decisions.find((x) => x.applicationId === c.applicationId);

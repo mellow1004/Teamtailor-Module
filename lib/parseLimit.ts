@@ -53,5 +53,12 @@ export function parseLimit(instruction: string): number | null {
     if (n && n > 0) return n;
   }
 
+  // Fallback: hitta valfritt tal 1–20 i texten oavsett kontext.
+  const fallback = text.matchAll(new RegExp(`\\b(${NUM_TOKEN})\\b`, "g"));
+  for (const m of fallback) {
+    const n = toNumber(m[1]);
+    if (n && n >= 1 && n <= 20) return n;
+  }
+
   return null;
 }

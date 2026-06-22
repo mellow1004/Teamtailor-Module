@@ -8,6 +8,7 @@ import {
   type CvState,
 } from "@/components/CandidateCard";
 import { parseLimit } from "@/lib/parseLimit";
+import type { Candidate } from "@/lib/teamtailor";
 
 type Job = { id: string; title: string; status: string };
 
@@ -118,6 +119,7 @@ export default function Home() {
   const [loading, setLoading] = useState<boolean>(false);
   const [loadingText, setLoadingText] = useState<string>("");
   const [results, setResults] = useState<CandidateResult[]>([]);
+  const [loadedCandidates, setLoadedCandidates] = useState<Candidate[]>([]);
   const [requestedLimit, setRequestedLimit] = useState<number | null>(null);
   const [screeningRejects, setScreeningRejects] = useState<number>(0);
   const [savedCount, setSavedCount] = useState<number>(0);
@@ -127,6 +129,7 @@ export default function Home() {
   const [selectedStageIds, setSelectedStageIds] = useState<Set<string>>(new Set());
   const [inboxStageId, setInboxStageId] = useState<string>("");
   const [templatesOpen, setTemplatesOpen] = useState<boolean>(false);
+  const [includeCv, setIncludeCv] = useState<boolean>(false);
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [actionByApp, setActionByApp] = useState<Record<string, ActionStatus>>({});
@@ -158,28 +161,37 @@ export default function Home() {
     setActionByApp({});
     setCvByApp({});
     setLoading(true);
-    setLoadingText("Hämtar kandidater…");
 
     try {
       const stageIds = Array.from(selectedStageIds);
-      const countRes = await fetch("/api/candidates", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobId, selectedStageIds: stageIds }),
-      });
-      const countData = await countRes.json();
-      const candidates: Array<{ applicationId: string }> = countData.candidates || [];
+      const reusingCandidates = loadedCandidates.length > 0;
+      let candidates: Candidate[];
+      if (reusingCandidates) {
+        candidates = loadedCandidates;
+      } else {
+        setLoadingText("Hämtar kandidater…");
+        const countRes = await fetch("/api/candidates", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jobId, selectedStageIds: stageIds }),
+        });
+        const countData = await countRes.json();
+        candidates = (countData.candidates || []) as Candidate[];
+        setLoadedCandidates(candidates);
+      }
       const total = candidates.length;
       const limit = parseLimit(instruction);
       const considered = limit && limit > 0 ? candidates.slice(0, limit) : candidates;
 
       const cachedIds: string[] = [];
       const cachedResults: CandidateResult[] = [];
-      for (const c of considered) {
-        const cached = loadCachedResult(c.applicationId);
-        if (cached) {
-          cachedIds.push(c.applicationId);
-          cachedResults.push(cached);
+      if (!reusingCandidates) {
+        for (const c of considered) {
+          const cached = loadCachedResult(c.applicationId);
+          if (cached) {
+            cachedIds.push(c.applicationId);
+            cachedResults.push(cached);
+          }
         }
       }
 
@@ -195,7 +207,14 @@ export default function Home() {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobId, instruction, cachedIds, selectedStageIds: stageIds }),
+        body: JSON.stringify({
+          jobId,
+          instruction,
+          cachedIds,
+          selectedStageIds: stageIds,
+          preloadedCandidates: candidates,
+          includeCv,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Analys misslyckades");
@@ -231,6 +250,7 @@ export default function Home() {
     setRequestedLimit(null);
     setScreeningRejects(0);
     setResults([]);
+    setLoadedCandidates([]);
     setSavedCount(newJobId ? loadResults(newJobId).length : 0);
     setStages([]);
     setSelectedStageIds(new Set());
@@ -285,6 +305,10 @@ export default function Home() {
 
   function clearCache() {
     clearAllCachedResults();
+  }
+
+  function reloadFromTeamtailor() {
+    setLoadedCandidates([]);
   }
 
   function toggleSelectAll() {
@@ -551,6 +575,30 @@ export default function Home() {
             >
               {loading ? "Kör…" : "Kör analys"}
             </button>
+            <label
+              className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none"
+              title="Hämtar varje kandidats CV-fil och inkluderar texten i analysen — gör körningen långsammare"
+            >
+              <input
+                type="checkbox"
+                checked={includeCv}
+                onChange={(e) => setIncludeCv(e.target.checked)}
+                disabled={loading}
+                className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+              />
+              Inkludera CV-analys
+            </label>
+            {loadedCandidates.length > 0 && (
+              <button
+                type="button"
+                onClick={reloadFromTeamtailor}
+                disabled={loading}
+                title="Rensar den lokala kandidatlistan och hämtar färska kandidater från Teamtailor vid nästa analys"
+                className="text-sm text-gray-600 hover:text-gray-900 underline-offset-2 hover:underline disabled:opacity-50 disabled:cursor-not-allowed transition"
+              >
+                Hämta om från Teamtailor
+              </button>
+            )}
             {error && <p className="text-sm text-red-600">{error}</p>}
           </div>
         </div>
@@ -661,6 +709,12 @@ export default function Home() {
               />
             ))}
           </div>
+
+          {loadedCandidates.length > 0 && (
+            <p className="mt-4 text-xs text-gray-500">
+              Analyserar mot {loadedCandidates.length} hämtade kandidater
+            </p>
+          )}
         </section>
       )}
     </main>

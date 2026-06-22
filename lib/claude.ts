@@ -18,8 +18,9 @@ VIKTIGT om instruktionen:
 - Instruktionen beskriver KRITERIER att bedöma varje kandidat mot, inte hur många kandidater du ska analysera. Du bedömer alltid en kandidat åt gången.
 - Om instruktionen anger ett antal (t.ex. "hitta 3 kandidater med X", "de fem bästa", "topp 10") är detta ett MÅLANTAL för hur många som bör godkännas — inte ett tak för hur många du analyserar. Bedöm varje kandidat på dess egna meriter mot kriterierna.
 - Om en kandidat tydligt uppfyller kriterierna ska decision vara "approve". Om kandidaten tydligt inte uppfyller dem ska decision vara "reject". Använd "maybe" sparsamt, bara när bedömningen verkligen är osäker.
-- Om färre kandidater uppfyller kraven än målantalet, returnera ENDAST de som faktiskt uppfyller kriterierna. Fyll ALDRIG upp med svaga kandidater bara för att nå antalet. Det är alltid bättre att returnera 1 stark kandidat än 3 där 2 är svaga.
+- Om användaren anger ett specifikt antal — returnera exakt det antalet som approve, rangordnade efter bäst matchning mot jobbannonsen. Om färre kandidater än efterfrågat antal håller tillräcklig kvalitet, returnera så många som möjligt och förklara i reason varför de övriga inte valdes.
 - Om INGEN kandidat uppfyller kriterierna ska samtliga få "reject" — förklara i reason-fältet varför just den kandidaten inte når kraven.
+- Tolka alltid intentionen om antal: formuleringar som "de 3 bästa", "tre stycken att kalla", "välj ut 3", "ge mig 5 namn", "topp 4" eller liknande betyder att användaren efterfrågar det antalet approve-kandidater. Resten får decision "reject" eller "maybe". Hur antalet hanteras i förhållande till kvalitet styrs av regeln ovan.
 
 VIKTIGT om reason-fältet:
 - För "reject": ange exakt vilket krav i instruktionen kandidaten inte uppfyller (t.ex. "Saknar erfarenhet av React" eller "Bor i Göteborg, instruktionen kräver Stockholm").
@@ -78,7 +79,8 @@ Returnera alltid JSON. Max 2 meningar i reason-fältet.`;
 function buildPrompt(
   candidate: Candidate,
   instruction: string,
-  jobDescription: string
+  jobDescription: string,
+  cvText?: string
 ): string {
   const screening = candidate.screeningAnswers
     .map((s) => `Q: ${s.question}\nA: ${s.answer}`)
@@ -91,6 +93,11 @@ ${jobDescription}
 `
     : "";
 
+  const trimmedCv = (cvText || "").trim();
+  const cvSection = trimmedCv
+    ? `\n\nCV-innehåll:\n${trimmedCv.length > 18000 ? trimmedCv.slice(0, 18000) + "\n[avkortat]" : trimmedCv}`
+    : "";
+
   return `${jobSection}Instruktion från rekryterare:
 ${instruction}
 
@@ -99,7 +106,7 @@ Kandidat:
 - Email: ${candidate.email || "saknas"}
 - Titel: ${candidate.title || "saknas"}
 - Erfarenhet/CV: ${candidate.experience || "saknas"}
-- Cover letter: ${candidate.coverLetter || "saknas"}
+- Cover letter: ${candidate.coverLetter || "saknas"}${cvSection}
 
 Screeningsvar:
 ${screening}
@@ -217,7 +224,8 @@ export async function analyzeCv(cvText: string): Promise<CvAnalysis> {
 export async function processCandidates(
   candidates: Candidate[],
   instruction: string,
-  jobDescription: string = ""
+  jobDescription: string = "",
+  cvByApplicationId?: Record<string, string>
 ): Promise<Decision[]> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY saknas i .env.local");
@@ -227,11 +235,12 @@ export async function processCandidates(
   const results = await Promise.all(
     candidates.map(async (cand) => {
       try {
+        const cvText = cvByApplicationId?.[cand.applicationId];
         const message = await client.messages.create({
           model: MODEL,
           max_tokens: 700,
           system: SYSTEM_PROMPT,
-          messages: [{ role: "user", content: buildPrompt(cand, instruction, jobDescription) }],
+          messages: [{ role: "user", content: buildPrompt(cand, instruction, jobDescription, cvText) }],
         });
 
         const textBlock = message.content.find((b) => b.type === "text");
